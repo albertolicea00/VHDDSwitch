@@ -85,6 +85,7 @@ namespace VHDDSwitch.Desktop
     internal class FluentSurface : Panel
     {
         internal Action<Graphics, float, float> Draw;
+        internal Color? ChildBackground { get; set; }
         internal FluentSurface() { DoubleBuffered = true; BackColor = Fluent.Background; ResizeRedraw = true; }
         protected override void OnPaint(PaintEventArgs e)
         { base.OnPaint(e); if (Draw != null) Draw(Fluent.Begin(e), Width / Fluent.Scale, Height / Fluent.Scale); }
@@ -97,14 +98,23 @@ namespace VHDDSwitch.Desktop
         internal FluentButton()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            SetStyle(ControlStyles.Opaque, true);
             FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
+            UseVisualStyleBackColor = false;
             Cursor = Cursors.Hand; Height = Fluent.S(40); TabStop = true;
             ForeColor = Fluent.Text; BackColor = Fluent.Background;
         }
         protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         protected override void OnPaint(PaintEventArgs e)
         {
+            // Paint the entire buffer, including the corners. The native Button
+            // background is rectangular and must not show behind our rounded path.
+            var surface = Parent as FluentSurface;
+            Color background = surface != null && surface.ChildBackground.HasValue
+                ? surface.ChildBackground.Value : Parent != null ? Parent.BackColor : Fluent.Background;
+            e.Graphics.Clear(background);
             var g = Fluent.Begin(e); float w = Width / Fluent.Scale, h = Height / Fluent.Scale;
             Color fill = Primary ? Fluent.Accent : (Selected ? Color.FromArgb(49, 49, 49) : Color.FromArgb(43, 43, 43));
             if (Navigation && !Selected) fill = Fluent.Sidebar;
@@ -127,6 +137,7 @@ namespace VHDDSwitch.Desktop
         internal event EventHandler ExpansionChanged;
         internal DiskCard(StorageDisk disk)
         {
+            ChildBackground = Fluent.Card;
             Disk = disk; Height = Fluent.S(240); Margin = new Padding(0, 0, Fluent.S(14), Fluent.S(14));
             AccessibleRole = AccessibleRole.Grouping;
             AccessibleName = "Disco " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", desconectado" : ", en línea");

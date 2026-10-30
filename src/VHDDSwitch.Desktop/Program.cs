@@ -154,7 +154,7 @@ namespace VHDDSwitch.Desktop
             };
             cards.Dock = DockStyle.Fill; cards.AutoScroll = true; cards.Margin = Padding.Empty; cards.BackColor = Fluent.Background;
             cards.SizeChanged += delegate { SizeCards(); };
-            activity.Dock = DockStyle.Fill; activity.Margin = new Padding(0, Fluent.S(8), 0, 0); activity.Draw = PaintActivity;
+            activity.Dock = DockStyle.Fill; activity.Margin = new Padding(0, Fluent.S(8), 0, 0); activity.ChildBackground = Fluent.Card; activity.Draw = PaintActivity;
             var fullLog = new FluentButton { Text = "Ver registro", Symbol = "\uE8A7", Width = Fluent.S(122), Height = Fluent.S(30) };
             fullLog.Click += delegate { ShowLog(); }; activity.Controls.Add(fullLog);
             activity.Resize += delegate { fullLog.Location = new Point(activity.Width - Fluent.S(137), Fluent.S(13)); };

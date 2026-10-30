@@ -1,4 +1,4 @@
-param([ValidateSet('mount','eject','status','help')][string]$Action = 'status', [string]$Pattern = '*JMicron*')
+param([ValidateSet('mount','eject','status','help')][string]$Action = 'status', [string]$Pattern = '*')
 $ErrorActionPreference = 'Stop'
 try {
     if ($Action -eq 'help') { Write-Host 'VHDDSwitch.bat [mount|eject|status|help] [hardware pattern]'; exit 0 }
@@ -17,6 +17,7 @@ try {
     $service = New-Object VHDDSwitch.Core.StorageService
     $profile = New-Object VHDDSwitch.Core.EnclosureProfile
     $profile.hardwareFilter = $Pattern
+    $profile.allExternal = $Pattern -eq '*'
     $disks = @($service.Discover() | Where-Object { $profile.Matches($_) })
     if ($Action -eq 'status') {
         $disks | Format-Table Number,FriendlyName,SerialNumber,BusType,IsOffline,Protected,HealthStatus -AutoSize

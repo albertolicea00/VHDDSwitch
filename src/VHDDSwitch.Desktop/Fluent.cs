@@ -226,11 +226,11 @@ namespace VHDDSwitch.Desktop
             string[] names = { "Archive", "Projects", "Multimedia", "Backups", "Library" };
             for (int i = 0; i < 5; i++)
             {
-                var disk = new StorageDisk { Number = i + 2, UniqueId = "DEMO-" + i, SerialNumber = "DEMO 00" + (i + 1), FriendlyName = "JMicron Generic DISK0" + i, BusType = "USB", PartitionStyle = "GPT", HealthStatus = "Healthy", OperationalStatus = "Online", Size = 4000000000000L };
+                var disk = new StorageDisk { UsbInterfaceId = @"USB\VID_DEMO\ENCLOSURE", Number = i + 2, UniqueId = "DEMO-" + i, SerialNumber = "DEMO 00" + (i + 1), FriendlyName = "Demo USB Disk " + i, BusType = "USB", PartitionStyle = "GPT", HealthStatus = "Healthy", OperationalStatus = "Online", Size = 4000000000000L };
                 disk.Volumes.Add(new StorageVolume { DriveLetter = ((char)('O' + i)).ToString(), Label = names[i], FileSystem = "NTFS", TotalBytes = 4000000000000L, FreeBytes = (long)(4000000000000L * new[] { .38, .72, .16, .55, .84 }[i]) });
                 result.Add(disk);
             }
-            var backup = new StorageDisk { Number = 1, UniqueId = "DEMO-BACKUP", SerialNumber = "DEMO BACKUP", FriendlyName = "TOSHIBA External USB 3.0", BusType = "USB", PartitionStyle = "GPT", HealthStatus = "Healthy", OperationalStatus = "Online", Size = 2000000000000L };
+            var backup = new StorageDisk { UsbInterfaceId = @"USB\VID_DEMO\BACKUP", Number = 1, UniqueId = "DEMO-BACKUP", SerialNumber = "DEMO BACKUP", FriendlyName = "Demo USB Backup", BusType = "USB", PartitionStyle = "GPT", HealthStatus = "Healthy", OperationalStatus = "Online", Size = 2000000000000L };
             backup.Volumes.Add(new StorageVolume { DriveLetter = "D", Label = "Backup", FileSystem = "NTFS", TotalBytes = 2000000000000L, FreeBytes = 1200000000000L });
             result.Add(backup); return result;
         }

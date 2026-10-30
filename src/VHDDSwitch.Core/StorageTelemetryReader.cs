@@ -56,6 +56,9 @@ namespace VHDDSwitch.Core
         {
             var result = new StorageDisk { Number = disk.Number, UniqueId = disk.UniqueId, SerialNumber = disk.SerialNumber, Protected = disk.Protected };
             // Offline disks have no live filesystem telemetry to wait for.
+            if (disk.BusType == "USB")
+                try { result.UsbInterfaceId = UsbGrouping.FindInterface(disk.Number); }
+                catch (ManagementException) { /* Recommendations are optional; keep telemetry usable. */ }
             if (disk.IsOffline) return result;
             using (var search = new ManagementObjectSearcher(new ManagementScope(Namespace), new ObjectQuery("SELECT * FROM MSFT_Partition WHERE DiskNumber = " + disk.Number.ToString(CultureInfo.InvariantCulture)), Options()))
             using (var partitions = search.Get())

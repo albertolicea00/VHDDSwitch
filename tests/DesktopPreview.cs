@@ -22,6 +22,11 @@ internal static class DesktopPreview
         var settings = Settings.Load(Path.Combine(root, "settings.json"));
         if (args.Length > 0 && args[0] == "--render")
         {
+            var sample = DemoData.Disks();
+            settings.profiles = new System.Collections.Generic.List<EnclosureProfile> {
+                new EnclosureProfile { id = "demo-library", name = "Media library", members = sample.Take(5).Select(EnclosureProfile.Identity).ToArray(), expectedBays = 5 },
+                new EnclosureProfile { id = "demo-backup", name = "Backups", members = sample.Skip(5).Select(EnclosureProfile.Identity).ToArray(), expectedBays = 1 }
+            };
             using (var form = new Dashboard(settings, true))
             {
                 form.Size = new Size(Fluent.S(1280), Fluent.S(1000));
@@ -57,9 +62,9 @@ internal static class DesktopPreview
         Check(cards.Controls.OfType<DiskCard>().Count() == 1, "profile navigation isolates backup");
         Render(form, Path.Combine(root, "build", "preview-backup.png"));
         var profile = (EnclosureProfile)selector.SelectedItem; string filter = profile.hardwareFilter;
-        profile.hardwareFilter = "NO-MATCH-DEMO"; type.GetMethod("Render", flags).Invoke(form, null);
+        var savedMembers = profile.members; profile.members = new string[0]; profile.hardwareFilter = "NO-MATCH-DEMO"; type.GetMethod("Render", flags).Invoke(form, null);
         Check(cards.Controls.OfType<DiskCard>().Count() == 0 && cards.Controls.Count == 1, "empty state");
-        Render(form, Path.Combine(root, "build", "preview-empty.png")); profile.hardwareFilter = filter;
+        Render(form, Path.Combine(root, "build", "preview-empty.png")); profile.hardwareFilter = filter; profile.members = savedMembers;
     }
     static void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     static void Render(Form form, string path)

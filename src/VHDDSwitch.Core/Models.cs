@@ -33,6 +33,7 @@ namespace VHDDSwitch.Core
         public TelemetryState TelemetryState { get; set; }
         public bool HasTelemetry { get; set; }
         public string TelemetryError { get; set; }
+        public string UsbInterfaceId { get; set; }
         public StorageDisk() { Volumes = new List<StorageVolume>(); HasTelemetry = true; }
     }
     public sealed class EnclosureProfile
@@ -43,9 +44,14 @@ namespace VHDDSwitch.Core
         public int expectedBays { get; set; }
         public string[] referenceLetters { get; set; }
         public bool autoMountOnDetect { get; set; }
+        public string[] members { get; set; }
+        public bool allExternal { get; set; }
+        public static string Identity(StorageDisk disk) { return (disk.UniqueId ?? "") + "|" + (disk.SerialNumber ?? ""); }
         public override string ToString() { return name; }
         public bool Matches(StorageDisk disk)
         {
+            if (allExternal) return disk.BusType == "USB" || disk.BusType == "1394" || disk.BusType == "SD" || disk.BusType == "MMC";
+            if (members != null) return !String.IsNullOrWhiteSpace(disk.UniqueId) && Array.IndexOf(members, Identity(disk)) >= 0;
             return Regex.IsMatch(disk.FriendlyName ?? "", "^" + Regex.Escape(hardwareFilter).Replace("\\*", ".*").Replace("\\?", ".") + "$", RegexOptions.IgnoreCase);
         }
     }
@@ -60,6 +66,12 @@ namespace VHDDSwitch.Core
     {
         public AppSettings app { get; set; }
         public List<EnclosureProfile> profiles { get; set; }
+        public void Save(string path)
+        {
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(this));
+            if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
+        }
         public static Settings Load(string path)
         {
             var result = new JavaScriptSerializer().Deserialize<Settings>(File.ReadAllText(path));
@@ -72,9 +84,10 @@ namespace VHDDSwitch.Core
                 throw new InvalidDataException("This version requires theme=Dark and requireAdminOnStartup=true.");
             foreach (var p in result.profiles)
             {
-                if (String.IsNullOrWhiteSpace(p.id) || !ids.Add(p.id) || String.IsNullOrWhiteSpace(p.name) || String.IsNullOrWhiteSpace(p.hardwareFilter) || p.expectedBays < 1 || p.expectedBays > 64)
+                if (String.IsNullOrWhiteSpace(p.id) || !ids.Add(p.id) || String.IsNullOrWhiteSpace(p.name) || (!p.allExternal && p.members == null && String.IsNullOrWhiteSpace(p.hardwareFilter)) || p.expectedBays < 1 || p.expectedBays > 64)
                     throw new InvalidDataException("Invalid profile or duplicate ID.");
             }
+            if (!result.profiles.Exists(p => p.allExternal)) result.profiles.Insert(0, new EnclosureProfile { id = "all-external", name = "All external drives", allExternal = true, expectedBays = 1 });
             return result;
         }
     }

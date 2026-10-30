@@ -22,3 +22,9 @@ Closing or minimizing the normal window hides it when minimizeToTray is enabled.
 The build preserves settings.json beside the selected output executable. Keep the executable, settings.json and settings.schema.json together. Close a running instance before rebuilding its executable, or select another output path.
 
 The CLI loads dist/VHDDSwitch.exe and supports mount, eject, status and help with an optional hardware wildcard. It has no simulation mode. Status queries real storage; mount and eject modify disks and request UAC. Exit code 1 indicates failure.
+
+## Drive groups and USB suggestions
+
+The default view is All external drives, with no vendor or drive-letter assumptions. Open Manage groups in the sidebar to create, rename or delete groups and check individual disks. Membership uses UniqueId plus serial number, not disk numbers or letters. Disconnected members remain listed until unchecked. Empty groups match nothing. Demo edits stay in memory; normal edits are saved atomically beside the executable. Existing wildcard profiles remain compatible.
+
+Suggest USB groups proposes disks that share the same concrete USB device instance in the Windows PnP parent tree. Review each proposal before accepting, then Save changes. Vendor/model similarity alone is insufficient. Root hubs and host controllers are not grouping keys. Enclosures exposing separate USB device interfaces may produce no suggestion; use manual selection in that case. Recommendations never mount or dismount disks.

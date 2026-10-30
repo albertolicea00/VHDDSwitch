@@ -2,7 +2,6 @@
   "$schema": "./settings.schema.json",
   "app": { "theme": "Dark", "refreshIntervalSeconds": 5, "minimizeToTray": true, "requireAdminOnStartup": true },
   "profiles": [
-    { "id": "orico-5bay", "name": "Orico 5-Bay Storage Rack", "hardwareFilter": "*JMicron*", "expectedBays": 5, "referenceLetters": ["O", "P", "Q", "R", "S"], "autoMountOnDetect": false },
-    { "id": "toshiba-backup", "name": "Toshiba External Backup", "hardwareFilter": "*TOSHIBA*", "expectedBays": 1, "referenceLetters": ["D"], "autoMountOnDetect": false }
+    { "id": "all-external", "name": "All external drives", "allExternal": true, "expectedBays": 1, "autoMountOnDetect": false }
   ]
 }

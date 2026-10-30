@@ -73,16 +73,7 @@ namespace VHDDSwitch.Desktop
             BuildSidebar(); BuildContent();
             profiles.SelectedIndexChanged += delegate { Render(); };
             var menu = new ContextMenuStrip { BackColor = Fluent.Sidebar, ForeColor = Fluent.Text };
-            menu.Items.Add("Open VHDDSwitch", null, delegate { Restore(); });
-            foreach (var p in settings.profiles)
-            {
-                var profile = p; var item = new ToolStripMenuItem(p.name);
-                item.DropDownItems.Add("Mount", null, async delegate { Restore(); profiles.SelectedItem = profile; await Operate(true); });
-                item.DropDownItems.Add("Dismount", null, async delegate { Restore(); profiles.SelectedItem = profile; await Operate(false); });
-                menu.Items.Add(item);
-            }
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Exit", null, delegate { if (!busy) { exiting = true; Close(); } else Restore(); });
+            menu.Opening += delegate { BuildTrayMenu(menu); };
             tray.Icon = Icon; tray.Text = demo ? "VHDDSwitch · Demo" : "VHDDSwitch"; tray.ContextMenuStrip = menu; tray.Visible = true;
             tray.DoubleClick += delegate { Restore(); };
             Resize += delegate { if (WindowState == FormWindowState.Minimized && settings.app.minimizeToTray) Hide(); };
@@ -113,8 +104,41 @@ namespace VHDDSwitch.Desktop
             var b = new FluentButton { Text = text, Symbol = icon, Width = Fluent.S(width), Primary = primary, Margin = new Padding(0, 0, Fluent.S(10), 0), AccessibleName = text };
             b.Click += click; actions.Add(b); return b;
         }
+        FluentSurface sidebarPanel;
+        void BuildTrayMenu(ContextMenuStrip menu)
+        {
+            foreach (ToolStripItem item in menu.Items.Cast<ToolStripItem>().ToArray()) item.Dispose();
+            menu.Items.Clear();
+            menu.Items.Add("Open VHDDSwitch", null, delegate { Restore(); });
+            foreach (var p in settings.profiles)
+            {
+                var profile = p; var item = new ToolStripMenuItem(p.name);
+                item.DropDownItems.Add("Mount", null, async delegate { Restore(); profiles.SelectedItem = profile; await Operate(true); });
+                item.DropDownItems.Add("Dismount", null, async delegate { Restore(); profiles.SelectedItem = profile; await Operate(false); });
+                menu.Items.Add(item);
+            }
+            menu.Items.Add("Exit", null, delegate { if (!busy) { exiting = true; Close(); } else Restore(); });
+        }
+        void ManageGroups()
+        {
+            if (busy) return;
+            using (var editor = new GroupEditor(settings, disks))
+            {
+                if (editor.ShowDialog(this) != DialogResult.OK) return;
+                var old = settings.profiles;
+                settings.profiles = editor.Groups;
+                try
+                {
+                    if (!demo && !injectedReader) settings.Save(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"));
+                }
+                catch (Exception e) { settings.profiles = old; MessageBox.Show(this, "Unable to save groups: " + e.Message); return; }
+                profiles.Items.Clear(); profiles.Items.AddRange(settings.profiles.Cast<object>().ToArray()); profiles.SelectedIndex = 0;
+                BuildSidebar(); Render(); Log(demo ? "Demo groups updated in memory only." : "Drive groups saved.");
+            }
+        }
         void BuildSidebar()
         {
+            if (sidebarPanel != null) { Controls.Remove(sidebarPanel); sidebarPanel.Dispose(); navigation.Clear(); actions.RemoveAll(b => b.IsDisposed); }
             var sidebar = new FluentSurface { Dock = DockStyle.Left, Width = Fluent.S(224), BackColor = Fluent.Sidebar, Padding = new Padding(Fluent.S(12), Fluent.S(116), Fluent.S(12), Fluent.S(130)) };
             sidebar.Draw = delegate(Graphics g, float w, float h)
             {
@@ -133,18 +157,20 @@ namespace VHDDSwitch.Desktop
             foreach (var p in settings.profiles)
             {
                 var profile = p;
-                string label = p.id == "orico-5bay" ? "Rack " + p.expectedBays + " bays" : p.name;
-                if (p.id == "toshiba-backup") label = "Toshiba Backup";
+                string label = p.name;
+
                 var b = new FluentButton { Text = label, Symbol = p.expectedBays > 1 ? "\uE8F1" : "\uEDA2", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(44), Margin = new Padding(0, 0, 0, Fluent.S(6)), Tag = p, AccessibleName = p.name };
                 b.Click += delegate { if (!busy) profiles.SelectedItem = profile; };
                 navigation.Add(b); list.Controls.Add(b);
             }
+            var manage = new FluentButton { Text = "Manage groups", Symbol = "\uE713", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(42) };
+            manage.Click += delegate { ManageGroups(); }; actions.Add(manage); list.Controls.Add(manage);
             var spacer = new Panel { Height = Fluent.S(30), Width = Fluent.S(190) }; list.Controls.Add(spacer);
             var locks = new FluentButton { Text = "File locks", Symbol = "\uE72E", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(42), Margin = new Padding(0, 0, 0, Fluent.S(6)) };
             locks.Click += async delegate { await InspectLock(); }; actions.Add(locks); list.Controls.Add(locks);
             var log = new FluentButton { Text = "Activity log", Symbol = "\uE9D9", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(42) };
             log.Click += delegate { ShowLog(); }; list.Controls.Add(log);
-            sidebar.Controls.Add(list); Controls.Add(sidebar);
+            sidebar.Controls.Add(list); sidebarPanel = sidebar; Controls.Add(sidebar); sidebar.SendToBack();
         }
         void BuildContent()
         {
@@ -194,7 +220,7 @@ namespace VHDDSwitch.Desktop
             float gap = 12, width = (w - gap * 2) / 3;
             long total = visible.Sum(d => d.Volumes.Sum(v => v.TotalBytes)), free = visible.Sum(d => d.Volumes.Sum(v => v.FreeBytes));
             string[] titles = { "DISKS DETECTED", "TOTAL CAPACITY", "AVAILABLE SPACE" };
-            string[] values = { visible.Count + " / " + ((EnclosureProfile)profiles.SelectedItem).expectedBays, Fluent.Capacity(total), Fluent.Capacity(free) };
+            string[] values = { ((EnclosureProfile)profiles.SelectedItem).allExternal ? visible.Count.ToString() : visible.Count + " / " + ((EnclosureProfile)profiles.SelectedItem).expectedBays, Fluent.Capacity(total), Fluent.Capacity(free) };
             string[] symbols = { "\uEDA2", "\uE8F1", "\uE9F9" };
             for (int i = 0; i < 3; i++)
             {
@@ -301,6 +327,7 @@ namespace VHDDSwitch.Desktop
                 if (token.IsCancellationRequested || IsDisposed) return;
                 if (details == null || DiskKey(details) != DiskKey(disk)) throw new IOException("The disk identity changed while loading details.");
                 disk.Volumes = details.Volumes; disk.Protected |= details.Protected;
+                disk.UsbInterfaceId = details.UsbInterfaceId;
                 disk.HasTelemetry = true; disk.TelemetryState = TelemetryState.Ready; disk.TelemetryError = null;
             }
             catch (OperationCanceledException) { return; }

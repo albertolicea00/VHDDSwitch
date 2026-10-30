@@ -41,6 +41,37 @@ namespace VHDDSwitch.Core
                 throw new InvalidOperationException("Unsupported external bus: " + disk.BusType);
             if (String.IsNullOrWhiteSpace(disk.UniqueId)) throw new InvalidOperationException("Disk has no stable identity; operation rejected.");
         }
+        public void EditVolume(StorageDisk selected, StorageVolume volume, string label, string letter)
+        {
+            var matches = Discover().Where(d => d.UniqueId == selected.UniqueId && d.SerialNumber == selected.SerialNumber).ToList();
+            if (matches.Count != 1) throw new IOException("Disk identity is missing or ambiguous.");
+            var disk = matches[0]; ValidateTarget(disk);
+            if (disk.IsOffline || !disk.Volumes.Any(v => v.Path == volume.Path)) throw new IOException("Volume identity changed or disk is offline.");
+            if (letter != null && (letter.Length != 1 || letter[0] < 'D' || letter[0] > 'Z')) throw new ArgumentException("Choose one drive letter from D to Z.");
+            var payload = new JavaScriptSerializer().Serialize(new { uid = disk.UniqueId, path = volume.Path, label = label, letter = letter });
+            string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
+            string script = "$ErrorActionPreference='Stop'; $x=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "'))|ConvertFrom-Json; $d=@(Get-Disk|Where-Object UniqueId -eq $x.uid); if($d.Count -ne 1 -or $d[0].IsBoot -or $d[0].IsSystem){throw 'Disk identity or protection changed'}; $parts=@($d[0]|Get-Partition); if(@($parts|Where-Object {$_.IsBoot -or $_.IsSystem -or $_.DriveLetter -eq 'C'}).Count){throw 'Protected disk'}; $p=@($parts|Where-Object { @($_|Get-Volume|Where-Object Path -eq $x.path).Count -eq 1 }); if($p.Count -ne 1){throw 'Volume identity changed'}; ";
+            script += letter != null ? "if(Get-PSDrive -Name $x.letter -ErrorAction SilentlyContinue){throw 'Drive letter already in use'}; $p[0]|Set-Partition -NewDriveLetter ([char]$x.letter); if((Get-Partition -DiskNumber $p[0].DiskNumber -PartitionNumber $p[0].PartitionNumber).DriveLetter -ne [char]$x.letter){throw 'Drive letter was not confirmed'}" : "$p[0]|Get-Volume|Set-Volume -NewFileSystemLabel $x.label; if(($p[0]|Get-Volume).FileSystemLabel -ne $x.label){throw 'Volume label was not confirmed'}";
+            RunPowerShell(script);
+        }
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool ReadFile(SafeFileHandle file, IntPtr buffer, uint count, out uint read, IntPtr overlapped);
+        public void KeepActive(StorageDisk selected)
+        {
+            var matches = Discover().Where(d => d.UniqueId == selected.UniqueId && d.SerialNumber == selected.SerialNumber).ToList();
+            if (matches.Count != 1) throw new IOException("Disk identity changed.");
+            var disk = matches[0]; ValidateTarget(disk); if (disk.IsOffline) return;
+            using (var handle = Native.CreateFile(@"\\.\PhysicalDrive" + disk.Number, 0x80000000, 3, IntPtr.Zero, 3, 0x20000000, IntPtr.Zero))
+            {
+                if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+                IntPtr allocation = Marshal.AllocHGlobal(131072);
+                try
+                {
+                    IntPtr aligned = new IntPtr((allocation.ToInt64() + 65535) & ~65535L); uint read;
+                    if (!ReadFile(handle, aligned, 65536, out read, IntPtr.Zero) || read == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+                finally { Marshal.FreeHGlobal(allocation); }
+            }
+        }
         public void Change(StorageDisk selected, bool online, Action<string> log)
         {
             // Never trust the disk number retained by the UI after USB re-enumeration.

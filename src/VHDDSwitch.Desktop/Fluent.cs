@@ -11,14 +11,26 @@ namespace VHDDSwitch.Desktop
     internal static class Fluent
     {
         internal static float Scale = 1;
-        internal static readonly Color Background = Color.FromArgb(24, 24, 24);
-        internal static readonly Color Sidebar = Color.FromArgb(32, 32, 32);
-        internal static readonly Color Card = Color.FromArgb(36, 36, 36);
-        internal static readonly Color Border = Color.FromArgb(54, 54, 54);
-        internal static readonly Color Text = Color.FromArgb(245, 245, 245);
-        internal static readonly Color Muted = Color.FromArgb(166, 166, 173);
-        internal static readonly Color Accent = Color.FromArgb(145, 200, 255);
-        internal static readonly Color Green = Color.FromArgb(108, 211, 167);
+        internal static bool Dark = true;
+        internal static void SetTheme(string theme)
+        {
+            object value = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1);
+            Dark = theme == "Dark" || (theme == "System" && Convert.ToInt32(value) == 0);
+        }
+        internal static Color Adapt(Color color)
+        {
+            if (Dark || color.R != color.G || Math.Abs(color.G - color.B) > 8) return color;
+            if (color.R < 80) { int level = Math.Min(255, Math.Max(210, 270 - color.R)); return Color.FromArgb(level, level, level); }
+            return color;
+        }
+        internal static Color Background { get { return Dark ? Color.FromArgb(24,24,24) : Color.FromArgb(243,243,243); } }
+        internal static Color Sidebar { get { return Dark ? Color.FromArgb(32,32,32) : Color.FromArgb(249,249,249); } }
+        internal static Color Card { get { return Dark ? Color.FromArgb(36,36,36) : Color.FromArgb(255,255,255); } }
+        internal static Color Border { get { return Dark ? Color.FromArgb(54,54,54) : Color.FromArgb(220,220,220); } }
+        internal static Color Text { get { return Dark ? Color.FromArgb(245,245,245) : Color.FromArgb(24,24,24); } }
+        internal static Color Muted { get { return Dark ? Color.FromArgb(166,166,173) : Color.FromArgb(94,94,105); } }
+        internal static Color Accent { get { return Dark ? Color.FromArgb(145,200,255) : Color.FromArgb(0,95,184); } }
+        internal static Color Green { get { return Dark ? Color.FromArgb(108,211,167) : Color.FromArgb(15,110,60); } }
         internal static int S(float value) { return (int)Math.Round(value * Scale); }
         internal static Graphics Begin(PaintEventArgs e)
         {
@@ -35,7 +47,7 @@ namespace VHDDSwitch.Desktop
         internal static void Box(Graphics g, RectangleF rect, Color fill, float radius, Color? border = null)
         {
             using (var p = Round(rect, radius))
-            { using (var b = new SolidBrush(fill)) g.FillPath(b, p); if (border.HasValue) using (var pen = new Pen(border.Value)) g.DrawPath(pen, p); }
+            { using (var b = new SolidBrush(Adapt(fill))) g.FillPath(b, p); if (border.HasValue) using (var pen = new Pen(border.Value)) g.DrawPath(pen, p); }
         }
         internal static void Write(Graphics g, string text, float x, float y, float width, float size, Color color, bool bold = false, float height = 28)
         {
@@ -48,7 +60,7 @@ namespace VHDDSwitch.Desktop
         { using (var f = new Font("Segoe Fluent Icons", size, FontStyle.Regular, GraphicsUnit.Pixel)) using (var b = new SolidBrush(color)) g.DrawString(glyph, f, b, x, y); }
         internal static void DiskIcon(Graphics g, float x, float y, Color color)
         {
-            Box(g, new RectangleF(x, y, 42, 42), Color.FromArgb(43, 50, 59), 10);
+            Box(g, new RectangleF(x, y, 42, 42), (Dark ? Color.FromArgb(43, 50, 59) : Color.FromArgb(230, 239, 249)), 10);
             using (var p = new Pen(color, 1.5f))
             { g.DrawRectangle(p, x + 10, y + 10, 22, 21); g.DrawLine(p, x + 10, y + 25, x + 32, y + 25); g.DrawEllipse(p, x + 25, y + 28, 1, 1); }
         }
@@ -63,7 +75,7 @@ namespace VHDDSwitch.Desktop
         internal static void WindowStyle(IntPtr handle)
         {
             // Unsupported attributes return HRESULT on Windows 10; retain native frame.
-            int dark = 1, rounded = 2, caption = 0x202020;
+            int dark = Dark ? 1 : 0, rounded = 2, caption = Dark ? 0x202020 : 0xF9F9F9;
             DwmSetWindowAttribute(handle, 20, ref dark, 4);
             DwmSetWindowAttribute(handle, 33, ref rounded, 4);
             DwmSetWindowAttribute(handle, 35, ref caption, 4);
@@ -124,7 +136,7 @@ namespace VHDDSwitch.Desktop
             Color fill = Primary ? Fluent.Accent : (Selected ? Color.FromArgb(49, 49, 49) : Color.FromArgb(43, 43, 43));
             if (Navigation && !Selected) fill = Fluent.Sidebar;
             if (hover && Enabled) fill = Primary ? Color.FromArgb(165, 210, 255) : Color.FromArgb(57, 57, 57);
-            Color ink = !Enabled ? Fluent.Muted : Primary ? Color.FromArgb(15, 30, 46) : Fluent.Text;
+            Color ink = !Enabled ? Fluent.Muted : Primary ? (Fluent.Dark ? Color.FromArgb(15, 30, 46) : Color.White) : Fluent.Text;
             if (!Enabled) fill = Color.FromArgb(39, 39, 39);
             Fluent.Box(g, new RectangleF(1, 1, w - 2, h - 2), fill, 6, Primary || Navigation ? fill : Fluent.Border);
             if (Selected) Fluent.Box(g, new RectangleF(1, h / 2 - 8, 3, 16), Fluent.Accent, 1);
@@ -140,23 +152,26 @@ namespace VHDDSwitch.Desktop
         internal bool Expanded;
         readonly FluentButton details;
         internal event EventHandler ExpansionChanged;
+        internal event EventHandler ActionsRequested;
         internal DiskCard(StorageDisk disk)
         {
             ChildBackground = Fluent.Card;
             Disk = disk; Height = Fluent.S(240); Margin = new Padding(0, 0, Fluent.S(14), Fluent.S(14));
             AccessibleRole = AccessibleRole.Grouping;
-            AccessibleName = "Disk " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", desconectado" : ", online");
+            AccessibleName = "Disk " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", offline" : ", online");
             AccessibleDescription = String.Join("; ", disk.Volumes.Select(v => v.DriveLetter + ": " + v.Label + ", " + Fluent.Capacity(v.FreeBytes) + " available"));
             details = new FluentButton { Text = "Details", Symbol = "\uE70D", Width = Fluent.S(104), Height = Fluent.S(30), AccessibleName = "Show details for disk " + disk.Number };
             details.Click += delegate { SetExpanded(!Expanded); if (ExpansionChanged != null) ExpansionChanged(this, EventArgs.Empty); };
-            Controls.Add(details); Draw = PaintCard;
+            var actions = new FluentButton { Text = "Actions", Width = Fluent.S(82), Height = Fluent.S(30), Location = new Point(Fluent.S(20), Fluent.S(194)) };
+            actions.Click += delegate { if (ActionsRequested != null) ActionsRequested(this, EventArgs.Empty); };
+            Controls.Add(actions); Controls.Add(details); Draw = PaintCard;
         }
         internal void SetExpanded(bool expanded)
         { Expanded = expanded; Height = Fluent.S(expanded ? 332 : 240); details.Text = expanded ? "Hide" : "Details"; Invalidate(); }
         internal void UpdateDisk(StorageDisk disk)
         {
             Disk = disk;
-            AccessibleName = "Disk " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", desconectado" : ", online");
+            AccessibleName = "Disk " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", offline" : ", online");
             AccessibleDescription = !disk.HasTelemetry ? "Volume information pending" : String.Join("; ", disk.Volumes.Select(v => v.DriveLetter + ": " + v.Label + ", " + Fluent.Capacity(v.FreeBytes) + " available"));
             Invalidate();
         }
@@ -173,7 +188,7 @@ namespace VHDDSwitch.Desktop
             if (!d.HasTelemetry && d.TelemetryState == TelemetryState.Loading) Fluent.Skeleton(g, 74, 51, w - 125, 10);
             else Fluent.Write(g, !d.HasTelemetry ? "Details unavailable" : String.IsNullOrEmpty(labels) ? "No mounted volume" : labels, 74, 48, w - 96, 12, Fluent.Muted);
             Color statusColor = d.Protected ? Fluent.Accent : d.IsOffline ? Fluent.Muted : Fluent.Green;
-            Fluent.Box(g, new RectangleF(20, 84, d.Protected ? 100 : 94, 25), Color.FromArgb(42, 49, 46), 5);
+            Fluent.Box(g, new RectangleF(20, 84, d.Protected ? 100 : 94, 25), (Fluent.Dark ? Color.FromArgb(42, 49, 46) : Color.FromArgb(230, 246, 235)), 5);
             using (var b = new SolidBrush(statusColor)) g.FillEllipse(b, 29, 94, 5, 5);
             Fluent.Write(g, d.Protected ? "Protected" : d.IsOffline ? "Offline" : "Online", 41, 87, 76, 12, statusColor);
             Fluent.Write(g, d.BusType + "  /  " + d.PartitionStyle, w - 121, 88, 102, 11, Fluent.Muted);
@@ -193,7 +208,7 @@ namespace VHDDSwitch.Desktop
                 Fluent.Write(g, !d.HasTelemetry ? "Pulsa Refresh para reintentar" : total > 0 ? (ratio * 100).ToString("0") + "% used of " + Fluent.Capacity(total) : Fluent.Capacity(d.Size) + " physical capacity", 20, 169, w - 40, 11, Fluent.Muted);
             }
             string note = d.TelemetryState == TelemetryState.Error ? " · OUTDATED" : d.TelemetryState == TelemetryState.Loading && d.HasTelemetry ? " · REFRESHING" : "";
-            Fluent.Write(g, "DISK " + d.Number.ToString("00") + note, 20, 202, w - 145, 9, Fluent.Muted, true);
+
             if (Expanded)
             {
                 using (var pen = new Pen(Fluent.Border)) g.DrawLine(pen, 20, 239, w - 20, 239);

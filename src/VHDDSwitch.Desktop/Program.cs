@@ -39,7 +39,7 @@ namespace VHDDSwitch.Desktop
             catch (Exception e) { MessageBox.Show(e.Message, "VHDDSwitch", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
         }
     }
-    public sealed class Dashboard : Form
+    public sealed partial class Dashboard : Form
     {
         readonly Settings settings; readonly StorageService storage = new StorageService(); readonly bool demo;
         readonly IStorageTelemetryReader telemetry;
@@ -61,6 +61,7 @@ namespace VHDDSwitch.Desktop
         public Dashboard(Settings config, bool demonstration, IStorageTelemetryReader reader)
         {
             settings = config; demo = demonstration;
+            Fluent.SetTheme(settings.app.theme);
             telemetry = reader ?? new StorageTelemetryReader(); injectedReader = reader != null;
             discoveryPending = !demo; inventoryVerified = demo;
             Text = "VHDDSwitch" + (demo ? " · Demo" : "");
@@ -70,7 +71,8 @@ namespace VHDDSwitch.Desktop
             Size = new Size(Math.Min(Fluent.S(1280), Screen.PrimaryScreen.WorkingArea.Width), Math.Min(Fluent.S(1000), Screen.PrimaryScreen.WorkingArea.Height));
             StartPosition = FormStartPosition.CenterScreen; Icon = Fluent.AppIcon(); DoubleBuffered = true;
             profiles.Items.AddRange(settings.profiles.Cast<object>().ToArray()); profiles.SelectedIndex = 0;
-            BuildSidebar(); BuildContent();
+            BuildSidebar(); BuildContent(); SetupDriveActions();
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged += SystemThemeChanged;
             profiles.SelectedIndexChanged += delegate { Render(); };
             var menu = new ContextMenuStrip { BackColor = Fluent.Sidebar, ForeColor = Fluent.Text };
             menu.Opening += delegate { BuildTrayMenu(menu); };
@@ -96,7 +98,7 @@ namespace VHDDSwitch.Desktop
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Fluent.WindowStyle(Handle); }
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { lifetime.Cancel(); animation.Dispose(); timer.Dispose(); tray.Dispose(); profiles.Dispose(); events.Dispose(); if (Icon != null) Icon.Dispose(); }
+            if (disposing) { Microsoft.Win32.SystemEvents.UserPreferenceChanged -= SystemThemeChanged; lifetime.Cancel(); keepActiveTimer.Dispose(); animation.Dispose(); timer.Dispose(); tray.Dispose(); profiles.Dispose(); events.Dispose(); if (Icon != null) Icon.Dispose(); }
             base.Dispose(disposing);
         }
         FluentButton MakeButton(string text, string icon, int width, EventHandler click, bool primary = false)
@@ -121,7 +123,7 @@ namespace VHDDSwitch.Desktop
         }
         void ManageGroups()
         {
-            if (busy) return;
+            if (busy || keepActiveWorking) return;
             using (var editor = new GroupEditor(settings, disks))
             {
                 if (editor.ShowDialog(this) != DialogResult.OK) return;
@@ -166,6 +168,9 @@ namespace VHDDSwitch.Desktop
             var manage = new FluentButton { Text = "Manage groups", Symbol = "\uE713", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(42) };
             manage.Click += delegate { ManageGroups(); }; actions.Add(manage); list.Controls.Add(manage);
             var spacer = new Panel { Height = Fluent.S(30), Width = Fluent.S(190) }; list.Controls.Add(spacer);
+            var theme = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = Fluent.S(198), AccessibleName = "Appearance", BackColor = Fluent.Card, ForeColor = Fluent.Text };
+            theme.Items.AddRange(new object[] { "System", "Light", "Dark" }); theme.SelectedItem = settings.app.theme;
+            theme.SelectedIndexChanged += delegate { ChangeTheme(theme.SelectedItem.ToString()); }; list.Controls.Add(theme);
             var locks = new FluentButton { Text = "File locks", Symbol = "\uE72E", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(42), Margin = new Padding(0, 0, 0, Fluent.S(6)) };
             locks.Click += async delegate { await InspectLock(); }; actions.Add(locks); list.Controls.Add(locks);
             var log = new FluentButton { Text = "Activity log", Symbol = "\uE9D9", Navigation = true, Width = Fluent.S(198), Height = Fluent.S(42) };
@@ -190,6 +195,7 @@ namespace VHDDSwitch.Desktop
             eject = MakeButton("Dismount all", "\uE8CD", 169, async delegate { await Operate(false); });
             toolbar.Controls.Add(mount); toolbar.Controls.Add(eject);
             refresh = MakeButton("Refresh", "\uE72C", 127, async delegate { await RefreshDisks(); }); toolbar.Controls.Add(refresh);
+            toolbar.Controls.Add(MakeButton("Keep group active", "\uE7E8", 172, delegate { ToggleActive(visible); }));
             stats.Dock = DockStyle.Fill; stats.Margin = new Padding(0, Fluent.S(5), 0, Fluent.S(7)); stats.Draw = PaintStats;
             section.Dock = DockStyle.Fill; section.Margin = Padding.Empty;
             section.Draw = delegate(Graphics g, float w, float h)
@@ -214,6 +220,32 @@ namespace VHDDSwitch.Desktop
             };
             layout.Controls.Add(heading, 0, 0); layout.Controls.Add(toolbar, 0, 1); layout.Controls.Add(stats, 0, 2); layout.Controls.Add(section, 0, 3); layout.Controls.Add(cards, 0, 4); layout.Controls.Add(activity, 0, 5); layout.Controls.Add(footer, 0, 6);
             Controls.Add(layout); layout.BringToFront();
+        }
+        void SystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+        {
+            if (settings.app.theme != "System" || IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke(new Action(() => ChangeTheme("System", false))); } catch (InvalidOperationException) { }
+        }
+        void ChangeTheme(string value, bool persist = true)
+        {
+            Color[] before = { Fluent.Background, Fluent.Sidebar, Fluent.Card, Fluent.Text, Fluent.Muted };
+            settings.app.theme = value; Fluent.SetTheme(value);
+            Color[] after = { Fluent.Background, Fluent.Sidebar, Fluent.Card, Fluent.Text, Fluent.Muted };
+            Recolor(this, before, after); activity.ChildBackground = Fluent.Card;
+            foreach (var card in cards.Controls.OfType<DiskCard>()) card.ChildBackground = Fluent.Card;
+            Fluent.WindowStyle(Handle); Invalidate(true);
+            if (persist && !demo && !injectedReader)
+                try { settings.Save(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json")); }
+                catch (Exception e) { Log("Unable to save appearance: " + e.Message); }
+        }
+        static void Recolor(Control control, Color[] before, Color[] after)
+        {
+            for (int i = 0; i < before.Length; i++)
+            {
+                if (control.BackColor == before[i]) { control.BackColor = after[i]; break; }
+            }
+            for (int i = 0; i < before.Length; i++) if (control.ForeColor == before[i]) { control.ForeColor = after[i]; break; }
+            foreach (Control child in control.Controls) Recolor(child, before, after);
         }
         void PaintStats(Graphics g, float w, float h)
         {
@@ -251,6 +283,7 @@ namespace VHDDSwitch.Desktop
         internal void RestoreWindow() { Show(); if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal; Activate(); BringToFront(); }
         void Log(string text)
         {
+            if (IsDisposed || lifetime.IsCancellationRequested) return;
             if (InvokeRequired) { BeginInvoke(new Action<string>(Log), text); return; }
             if (events.TextLength > 60000) events.Clear();
             string line = DateTime.Now.ToString("HH:mm:ss") + "   " + text;
@@ -272,7 +305,7 @@ namespace VHDDSwitch.Desktop
         static string DiskKey(StorageDisk d) { return d.Number + "|" + d.UniqueId + "|" + d.SerialNumber; }
         async Task RefreshDisks()
         {
-            if (busy || refreshing || lifetime.IsCancellationRequested) return;
+            if (busy || refreshing || keepActiveWorking || lifetime.IsCancellationRequested) return;
             if (demo) { lastUpdate = "Simulated data"; Render(); Log("Demo: refreshed the view without querying hardware."); return; }
             var token = lifetime.Token;
             refreshing = true; inventoryError = null; lastUpdate = "Refreshing…"; UpdateActions(); footer.Invalidate();
@@ -361,7 +394,7 @@ namespace VHDDSwitch.Desktop
                 DiskCard card;
                 if (!existing.TryGetValue(DiskKey(d), out card))
                 {
-                    card = new DiskCard(d); card.ExpansionChanged += delegate { cards.PerformLayout(); }; cards.Controls.Add(card);
+                    card = new DiskCard(d); card.ActionsRequested += delegate(object sender, EventArgs args) { ShowDiskActions((DiskCard)sender); }; card.ExpansionChanged += delegate { cards.PerformLayout(); }; cards.Controls.Add(card);
                 }
                 else card.UpdateDisk(d);
                 cards.Controls.SetChildIndex(card, index++);
@@ -397,11 +430,12 @@ namespace VHDDSwitch.Desktop
         }
         async Task Operate(bool online)
         {
-            if (busy) return;
+            if (busy || keepActiveWorking) return;
             if (!demo && (injectedReader || refreshing || !inventoryVerified || visible.Any(d => d.TelemetryState != TelemetryState.Ready))) { Log("Wait for verified disk details before running an operation."); return; }
             if (demo) { foreach (var d in disks.Where(((EnclosureProfile)profiles.SelectedItem).Matches)) { d.IsOffline = !online; d.OperationalStatus = online ? "Online" : "Offline"; } Log("Demo: simulated state updated."); Render(); return; }
             var p = (EnclosureProfile)profiles.SelectedItem;
             if (MessageBox.Show(this, (online ? "Mount" : "Flush caches and dismount") + " the external disks in " + p.name + "?", "Confirm operation", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            foreach (var disk in visible) keepActive.Remove(EnclosureProfile.Identity(disk));
             Busy(true); int failures = 0;
             try
             {
@@ -419,7 +453,7 @@ namespace VHDDSwitch.Desktop
         }
         async Task InspectLock()
         {
-            if (busy) return;
+            if (busy || keepActiveWorking) return;
 
             if (demo) { Log("Demo: file lock queries are disabled."); return; }
             using (var picker = new OpenFileDialog { Title = "Select the busy file to inspect with Restart Manager" })

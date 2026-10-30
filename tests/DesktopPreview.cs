@@ -32,6 +32,9 @@ internal static class DesktopPreview
                 form.Size = new Size(Fluent.S(1280), Fluent.S(1000));
                 var handle = form.Handle; form.CreateControl(); form.PerformLayout();
                 Render(form, Path.Combine(root, "build", "preview-win11.png"));
+                typeof(Dashboard).GetMethod("ChangeTheme", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, new object[] { "Light", false });
+                Render(form, Path.Combine(root, "build", "preview-light.png"));
+                typeof(Dashboard).GetMethod("ChangeTheme", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, new object[] { "Dark", false });
                 form.Size = new Size(Fluent.S(1000), Fluent.S(740)); form.PerformLayout();
                 Render(form, Path.Combine(root, "build", "preview-compact.png"));
                 VerifyDemo(form, root);

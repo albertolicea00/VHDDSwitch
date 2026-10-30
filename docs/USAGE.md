@@ -28,3 +28,13 @@ The CLI loads dist/VHDDSwitch.exe and supports mount, eject, status and help wit
 The default view is All external drives, with no vendor or drive-letter assumptions. Open Manage groups in the sidebar to create, rename or delete groups and check individual disks. Membership uses UniqueId plus serial number, not disk numbers or letters. Disconnected members remain listed until unchecked. Empty groups match nothing. Demo edits stay in memory; normal edits are saved atomically beside the executable. Existing wildcard profiles remain compatible.
 
 Suggest USB groups proposes disks that share the same concrete USB device instance in the Windows PnP parent tree. Review each proposal before accepting, then Save changes. Vendor/model similarity alone is insufficient. Root hubs and host controllers are not grouping keys. Enclosures exposing separate USB device interfaces may produce no suggestion; use manual selection in that case. Recommendations never mount or dismount disks.
+
+## Appearance and drive actions
+
+Choose System, Light or Dark in the sidebar. System follows the Windows app theme, including changes while the app is running. The choice is saved beside the executable outside demo mode.
+
+Open Actions on a disk card to mount/dismount that disk, keep it active, rename a selected filesystem volume or assign a free drive letter from D to Z. A disk may contain multiple volumes: select the intended volume in the submenu. Windows remembers letter assignments where possible; the app does not enforce letters across computers. Existing letters are never stolen from another drive. System and boot disk safeguards and fresh identity checks also apply to volume changes.
+
+Mount all and Dismount all act on the selected group. Keep group active toggles currently online, unprotected members of that group. Individual keep-active selections are available in each card menu. Selections last only for the running session and stop before dismounting through the app. Each interval attempts an uncached, read-only physical disk read after revalidating identity. It does not write keep-alive files or change system-wide power settings. Enclosure firmware may ignore these attempts; continuous spindle rotation or head position cannot be guaranteed. Native device I/O may wait for the driver. Keep-active errors disable that disk's selection and appear in the log.
+
+Demo mode simulates labels, letters and disk state and never performs keep-active reads. New storage operations remain untested against real drives until suitable test hardware is available.

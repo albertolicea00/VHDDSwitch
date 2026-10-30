@@ -16,7 +16,11 @@
                                                 ],
                                    "properties":  {
                                                       "theme":  {
-                                                                    "const":  "Dark"
+                                                                    "enum":  [
+                                                                                 "System",
+                                                                                 "Light",
+                                                                                 "Dark"
+                                                                             ]
                                                                 },
                                                       "refreshIntervalSeconds":  {
                                                                                      "type":  "integer",

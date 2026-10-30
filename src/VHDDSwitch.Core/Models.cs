@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 
@@ -80,8 +81,8 @@ namespace VHDDSwitch.Core
             if (result.app.refreshIntervalSeconds < 2 || result.app.refreshIntervalSeconds > 3600)
                 throw new InvalidDataException("refreshIntervalSeconds must be between 2 and 3600.");
             var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (result.app.theme != "Dark" || !result.app.requireAdminOnStartup)
-                throw new InvalidDataException("This version requires theme=Dark and requireAdminOnStartup=true.");
+            if (!new[] { "Dark", "Light", "System" }.Contains(result.app.theme) || !result.app.requireAdminOnStartup)
+                throw new InvalidDataException("Theme must be Dark, Light or System; administrator startup is required.");
             foreach (var p in result.profiles)
             {
                 if (String.IsNullOrWhiteSpace(p.id) || !ids.Add(p.id) || String.IsNullOrWhiteSpace(p.name) || (!p.allExternal && p.members == null && String.IsNullOrWhiteSpace(p.hardwareFilter)) || p.expectedBays < 1 || p.expectedBays > 64)

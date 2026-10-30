@@ -24,8 +24,17 @@ namespace VHDDSwitch.Desktop
                 using (var g = Graphics.FromHwnd(IntPtr.Zero)) Fluent.Scale = g.DpiX / 96f;
                 Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
                 bool demo = args.Any(a => a.Equals("--demo", StringComparison.OrdinalIgnoreCase));
-                var settings = Settings.Load(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"));
-                Application.Run(new Dashboard(settings, demo)); return 0;
+                using (var instance = new SingleInstance(demo))
+                {
+                    if (!instance.IsPrimary) return 0;
+                    var settings = Settings.Load(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"));
+                    using (var dashboard = new Dashboard(settings, demo))
+                    {
+                        instance.Listen(dashboard, dashboard.RestoreWindow);
+                        Application.Run(dashboard);
+                    }
+                    return 0;
+                }
             }
             catch (Exception e) { MessageBox.Show(e.Message, "VHDDSwitch", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
         }
@@ -212,7 +221,8 @@ namespace VHDDSwitch.Desktop
             using (var text = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, BorderStyle = BorderStyle.None, Font = new Font("Cascadia Mono", 10), BackColor = Fluent.Background, ForeColor = Fluent.Text, Text = events.Text })
             { dialog.Padding = new Padding(Fluent.S(20)); dialog.Controls.Add(text); dialog.HandleCreated += delegate { Fluent.WindowStyle(dialog.Handle); }; dialog.ShowDialog(this); }
         }
-        void Restore() { Show(); WindowState = FormWindowState.Normal; Activate(); }
+        void Restore() { RestoreWindow(); }
+        internal void RestoreWindow() { Show(); if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal; Activate(); BringToFront(); }
         void Log(string text)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(Log), text); return; }

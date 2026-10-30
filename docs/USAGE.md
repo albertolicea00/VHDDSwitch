@@ -1,5 +1,7 @@
 # Build and usage
 
+Only one normal instance runs per Windows user and session. Opening the application again restores the existing window, including when hidden in the tray. Demo mode has its own single-instance scope so it cannot accidentally activate a real-storage window. Windows may still request UAC before the second process can notify the first instance.
+
 Requires Windows 10/11, .NET Framework 4.8 and Windows PowerShell 5.1 with the Storage module. No NuGet downloads are required.
 
 From the repository root:

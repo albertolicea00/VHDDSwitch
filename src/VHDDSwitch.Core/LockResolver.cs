@@ -41,7 +41,7 @@ namespace VHDDSwitch.Core
                     if (error != 0) throw new Win32Exception(error);
                     Array.Resize(ref result, (int)count); return result;
                 }
-                throw new InvalidOperationException("La lista de procesos cambio; reintente.");
+                throw new InvalidOperationException("The process list changed; retry.");
             }
             finally { RmEndSession(session); }
         }

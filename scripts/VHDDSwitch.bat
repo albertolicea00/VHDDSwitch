@@ -2,7 +2,7 @@
 setlocal
 if not "%~1"=="" goto command
 :menu
-echo VHDDSwitch: [1] Montar  [2] Desmontar  [3] Estado  [4] Salir
+echo VHDDSwitch: [1] Mount  [2] Dismount  [3] Status  [4] Exit
 choice /c 1234 /n
 if errorlevel 4 exit /b 0
 if errorlevel 3 (

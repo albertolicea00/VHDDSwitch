@@ -1,9 +1,9 @@
 param([ValidateSet('mount','eject','status','help')][string]$Action = 'status', [string]$Pattern = '*JMicron*')
 $ErrorActionPreference = 'Stop'
 try {
-    if ($Action -eq 'help') { Write-Host 'VHDDSwitch.bat [mount|eject|status|help] [patron hardware]'; exit 0 }
+    if ($Action -eq 'help') { Write-Host 'VHDDSwitch.bat [mount|eject|status|help] [hardware pattern]'; exit 0 }
     $exe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\dist\VHDDSwitch.exe'))
-    if (-not (Test-Path -LiteralPath $exe)) { throw 'Ejecute build.bat primero.' }
+    if (-not (Test-Path -LiteralPath $exe)) { throw 'Run build.bat first.' }
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if ($Action -ne 'status' -and -not $admin) {
         $payload = @{Script=$PSCommandPath; Action=$Action; Pattern=$Pattern} | ConvertTo-Json -Compress
@@ -23,12 +23,12 @@ try {
         $disks | ForEach-Object { $_.Volumes } | Format-Table DriveLetter,Label,FileSystem,TotalBytes,FreeBytes -AutoSize
         exit 0
     }
-    if ($disks.Count -eq 0) { throw 'No hay discos coincidentes.' }
+    if ($disks.Count -eq 0) { throw 'No matching disks found.' }
     $failed = 0
     foreach ($disk in $disks) {
         try { $service.Change($disk, ($Action -eq 'mount'), [Action[string]]{param($line) Write-Host $line}) }
         catch { $failed++; Write-Warning $_.Exception.GetBaseException().Message }
     }
-    if ($failed -gt 0) { throw "$failed discos sin completar. No desconecte los discos afectados." }
+    if ($failed -gt 0) { throw "$failed disks failed. Do not disconnect affected disks." }
     exit 0
 } catch { Write-Error $_ -ErrorAction Continue; exit 1 }

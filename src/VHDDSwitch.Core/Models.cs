@@ -6,6 +6,7 @@ using System.Web.Script.Serialization;
 
 namespace VHDDSwitch.Core
 {
+    public enum TelemetryState { Ready, Loading, Error }
     public sealed class StorageVolume
     {
         public string Path { get; set; }
@@ -29,7 +30,10 @@ namespace VHDDSwitch.Core
         public bool Protected { get; set; }
         public long Size { get; set; }
         public List<StorageVolume> Volumes { get; set; }
-        public StorageDisk() { Volumes = new List<StorageVolume>(); }
+        public TelemetryState TelemetryState { get; set; }
+        public bool HasTelemetry { get; set; }
+        public string TelemetryError { get; set; }
+        public StorageDisk() { Volumes = new List<StorageVolume>(); HasTelemetry = true; }
     }
     public sealed class EnclosureProfile
     {
@@ -60,16 +64,16 @@ namespace VHDDSwitch.Core
         {
             var result = new JavaScriptSerializer().Deserialize<Settings>(File.ReadAllText(path));
             if (result == null || result.app == null || result.profiles == null || result.profiles.Count == 0)
-                throw new InvalidDataException("settings.json necesita app y al menos un perfil.");
+                throw new InvalidDataException("settings.json requires app settings and at least one profile.");
             if (result.app.refreshIntervalSeconds < 2 || result.app.refreshIntervalSeconds > 3600)
-                throw new InvalidDataException("refreshIntervalSeconds debe estar entre 2 y 3600.");
+                throw new InvalidDataException("refreshIntervalSeconds must be between 2 and 3600.");
             var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (result.app.theme != "Dark" || !result.app.requireAdminOnStartup)
-                throw new InvalidDataException("Esta version requiere theme=Dark y requireAdminOnStartup=true.");
+                throw new InvalidDataException("This version requires theme=Dark and requireAdminOnStartup=true.");
             foreach (var p in result.profiles)
             {
                 if (String.IsNullOrWhiteSpace(p.id) || !ids.Add(p.id) || String.IsNullOrWhiteSpace(p.name) || String.IsNullOrWhiteSpace(p.hardwareFilter) || p.expectedBays < 1 || p.expectedBays > 64)
-                    throw new InvalidDataException("Perfil invalido o ID duplicado.");
+                    throw new InvalidDataException("Invalid profile or duplicate ID.");
             }
             return result;
         }

@@ -52,6 +52,11 @@ namespace VHDDSwitch.Desktop
             using (var p = new Pen(color, 1.5f))
             { g.DrawRectangle(p, x + 10, y + 10, 22, 21); g.DrawLine(p, x + 10, y + 25, x + 32, y + 25); g.DrawEllipse(p, x + 25, y + 28, 1, 1); }
         }
+        internal static void Skeleton(Graphics g, float x, float y, float width, float height)
+        {
+            int shade = 51 + (int)(5 * (1 + Math.Sin(Environment.TickCount / 330.0 + y / 70.0)));
+            Box(g, new RectangleF(x, y, Math.Max(5, width), height), Color.FromArgb(shade, shade, shade + 2), Math.Min(4, height / 2));
+        }
         internal static string Capacity(long value)
         { return value >= 1099511627776L ? (value / 1099511627776.0).ToString("0.0") + " TB" : (value / 1073741824.0).ToString("0.0") + " GB"; }
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
@@ -131,7 +136,7 @@ namespace VHDDSwitch.Desktop
     }
     internal sealed class DiskCard : FluentSurface
     {
-        internal readonly StorageDisk Disk;
+        internal StorageDisk Disk { get; private set; }
         internal bool Expanded;
         readonly FluentButton details;
         internal event EventHandler ExpansionChanged;
@@ -140,14 +145,21 @@ namespace VHDDSwitch.Desktop
             ChildBackground = Fluent.Card;
             Disk = disk; Height = Fluent.S(240); Margin = new Padding(0, 0, Fluent.S(14), Fluent.S(14));
             AccessibleRole = AccessibleRole.Grouping;
-            AccessibleName = "Disco " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", desconectado" : ", en línea");
-            AccessibleDescription = String.Join("; ", disk.Volumes.Select(v => v.DriveLetter + ": " + v.Label + ", " + Fluent.Capacity(v.FreeBytes) + " disponibles"));
-            details = new FluentButton { Text = "Detalles", Symbol = "\uE70D", Width = Fluent.S(104), Height = Fluent.S(30), AccessibleName = "Mostrar detalles del disco " + disk.Number };
+            AccessibleName = "Disk " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", desconectado" : ", online");
+            AccessibleDescription = String.Join("; ", disk.Volumes.Select(v => v.DriveLetter + ": " + v.Label + ", " + Fluent.Capacity(v.FreeBytes) + " available"));
+            details = new FluentButton { Text = "Details", Symbol = "\uE70D", Width = Fluent.S(104), Height = Fluent.S(30), AccessibleName = "Show details for disk " + disk.Number };
             details.Click += delegate { SetExpanded(!Expanded); if (ExpansionChanged != null) ExpansionChanged(this, EventArgs.Empty); };
             Controls.Add(details); Draw = PaintCard;
         }
         internal void SetExpanded(bool expanded)
-        { Expanded = expanded; Height = Fluent.S(expanded ? 332 : 240); details.Text = expanded ? "Ocultar" : "Detalles"; Invalidate(); }
+        { Expanded = expanded; Height = Fluent.S(expanded ? 332 : 240); details.Text = expanded ? "Hide" : "Details"; Invalidate(); }
+        internal void UpdateDisk(StorageDisk disk)
+        {
+            Disk = disk;
+            AccessibleName = "Disk " + disk.Number + ", " + disk.FriendlyName + (disk.IsOffline ? ", desconectado" : ", online");
+            AccessibleDescription = !disk.HasTelemetry ? "Volume information pending" : String.Join("; ", disk.Volumes.Select(v => v.DriveLetter + ": " + v.Label + ", " + Fluent.Capacity(v.FreeBytes) + " available"));
+            Invalidate();
+        }
         protected override void OnLayout(LayoutEventArgs e)
         { base.OnLayout(e); if (details != null) details.Location = new Point(Width - Fluent.S(124), Fluent.S(194)); }
         void PaintCard(Graphics g, float w, float h)
@@ -156,28 +168,54 @@ namespace VHDDSwitch.Desktop
             Fluent.Box(g, new RectangleF(1, 1, w - 2, h - 2), Fluent.Card, 9, Fluent.Border);
             Fluent.DiskIcon(g, 20, 20, d.IsOffline ? Fluent.Muted : Fluent.Accent);
             string letters = String.Join(" · ", d.Volumes.Where(v => !String.IsNullOrEmpty(v.DriveLetter)).Select(v => v.DriveLetter + ":"));
-            Fluent.Write(g, letters.Length > 0 ? letters : "Disco " + d.Number, 74, 18, w - 96, 23, Fluent.Text, true, 34);
+            Fluent.Write(g, letters.Length > 0 ? letters : "Disk " + d.Number, 74, 18, w - 96, 23, Fluent.Text, true, 34);
             string labels = String.Join(" · ", d.Volumes.Select(v => v.Label).Where(s => !String.IsNullOrWhiteSpace(s)));
-            Fluent.Write(g, String.IsNullOrEmpty(labels) ? "Sin volumen montado" : labels, 74, 48, w - 96, 12, Fluent.Muted);
+            if (!d.HasTelemetry && d.TelemetryState == TelemetryState.Loading) Fluent.Skeleton(g, 74, 51, w - 125, 10);
+            else Fluent.Write(g, !d.HasTelemetry ? "Details unavailable" : String.IsNullOrEmpty(labels) ? "No mounted volume" : labels, 74, 48, w - 96, 12, Fluent.Muted);
             Color statusColor = d.Protected ? Fluent.Accent : d.IsOffline ? Fluent.Muted : Fluent.Green;
             Fluent.Box(g, new RectangleF(20, 84, d.Protected ? 100 : 94, 25), Color.FromArgb(42, 49, 46), 5);
             using (var b = new SolidBrush(statusColor)) g.FillEllipse(b, 29, 94, 5, 5);
-            Fluent.Write(g, d.Protected ? "Protegido" : d.IsOffline ? "Offline" : "En línea", 41, 87, 76, 12, statusColor);
+            Fluent.Write(g, d.Protected ? "Protected" : d.IsOffline ? "Offline" : "Online", 41, 87, 76, 12, statusColor);
             Fluent.Write(g, d.BusType + "  /  " + d.PartitionStyle, w - 121, 88, 102, 11, Fluent.Muted);
             long total = d.Volumes.Sum(v => v.TotalBytes), free = d.Volumes.Sum(v => v.FreeBytes);
             double ratio = total > 0 ? Math.Max(0, Math.Min(1, (total - free) / (double)total)) : 0;
-            Fluent.Write(g, d.IsOffline ? "Disco desconectado lógicamente" : total > 0 ? Fluent.Capacity(free) + " disponibles" : "Capacidad sin datos", 20, 128, w - 40, 13, Fluent.Text);
-            Fluent.Box(g, new RectangleF(20, 156, w - 40, 5), Color.FromArgb(60, 60, 64), 2);
-            if (ratio > 0) Fluent.Box(g, new RectangleF(20, 156, Math.Max(5, (float)((w - 40) * ratio)), 5), ratio > .90 ? Color.FromArgb(243, 184, 100) : Fluent.Accent, 2);
-            Fluent.Write(g, total > 0 ? (ratio * 100).ToString("0") + "% utilizado de " + Fluent.Capacity(total) : Fluent.Capacity(d.Size) + " de capacidad física", 20, 169, w - 40, 11, Fluent.Muted);
-            Fluent.Write(g, "DISCO " + d.Number.ToString("00"), 20, 202, w - 145, 10, Fluent.Muted, true);
+            if (!d.HasTelemetry && d.TelemetryState == TelemetryState.Loading)
+            {
+                Fluent.Skeleton(g, 20, 132, w - 106, 11);
+                Fluent.Skeleton(g, 20, 156, w - 40, 5);
+                Fluent.Skeleton(g, 20, 174, w - 72, 8);
+            }
+            else
+            {
+                Fluent.Write(g, !d.HasTelemetry ? "Unable to load capacity" : d.IsOffline ? "Disk is logically offline" : total > 0 ? Fluent.Capacity(free) + " available" : "Capacity unavailable", 20, 128, w - 40, 13, Fluent.Text);
+                Fluent.Box(g, new RectangleF(20, 156, w - 40, 5), Color.FromArgb(60, 60, 64), 2);
+                if (ratio > 0) Fluent.Box(g, new RectangleF(20, 156, Math.Max(5, (float)((w - 40) * ratio)), 5), ratio > .90 ? Color.FromArgb(243, 184, 100) : Fluent.Accent, 2);
+                Fluent.Write(g, !d.HasTelemetry ? "Pulsa Refresh para reintentar" : total > 0 ? (ratio * 100).ToString("0") + "% used of " + Fluent.Capacity(total) : Fluent.Capacity(d.Size) + " physical capacity", 20, 169, w - 40, 11, Fluent.Muted);
+            }
+            string note = d.TelemetryState == TelemetryState.Error ? " · OUTDATED" : d.TelemetryState == TelemetryState.Loading && d.HasTelemetry ? " · REFRESHING" : "";
+            Fluent.Write(g, "DISK " + d.Number.ToString("00") + note, 20, 202, w - 145, 9, Fluent.Muted, true);
             if (Expanded)
             {
                 using (var pen = new Pen(Fluent.Border)) g.DrawLine(pen, 20, 239, w - 20, 239);
                 Fluent.Write(g, d.FriendlyName, 20, 251, w - 40, 12, Fluent.Text);
-                Fluent.Write(g, "Serie  " + d.SerialNumber, 20, 275, w - 40, 11, Fluent.Muted);
-                Fluent.Write(g, "Salud  " + d.HealthStatus + "  ·  " + d.OperationalStatus, 20, 298, w - 40, 11, Fluent.Muted);
+                Fluent.Write(g, "Serial  " + d.SerialNumber, 20, 275, w - 40, 11, Fluent.Muted);
+                Fluent.Write(g, "Health  " + d.HealthStatus + "  ·  " + d.OperationalStatus, 20, 298, w - 40, 11, Fluent.Muted);
             }
+        }
+    }
+    internal sealed class SkeletonCard : FluentSurface
+    {
+        internal SkeletonCard()
+        {
+            Height = Fluent.S(240); Margin = new Padding(0, 0, Fluent.S(14), Fluent.S(14)); AccessibleName = "Discovering drives";
+            Draw = delegate(Graphics g, float w, float h)
+            {
+                Fluent.Box(g, new RectangleF(1, 1, w - 2, h - 2), Fluent.Card, 9, Fluent.Border);
+                Fluent.Skeleton(g, 20, 20, 42, 42); Fluent.Skeleton(g, 74, 23, w - 130, 19); Fluent.Skeleton(g, 74, 51, w - 112, 10);
+                Fluent.Skeleton(g, 20, 84, 94, 25); Fluent.Skeleton(g, 20, 132, w - 106, 11);
+                Fluent.Skeleton(g, 20, 156, w - 40, 5); Fluent.Skeleton(g, 20, 174, w - 72, 8);
+                Fluent.Write(g, "Discovering drive…", 20, 202, w - 40, 11, Fluent.Muted);
+            };
         }
     }
     internal static class DemoData
@@ -185,7 +223,7 @@ namespace VHDDSwitch.Desktop
         internal static System.Collections.Generic.List<StorageDisk> Disks()
         {
             var result = new System.Collections.Generic.List<StorageDisk>();
-            string[] names = { "Archivo", "Proyectos", "Multimedia", "Copias de seguridad", "Biblioteca" };
+            string[] names = { "Archive", "Projects", "Multimedia", "Backups", "Library" };
             for (int i = 0; i < 5; i++)
             {
                 var disk = new StorageDisk { Number = i + 2, UniqueId = "DEMO-" + i, SerialNumber = "DEMO 00" + (i + 1), FriendlyName = "JMicron Generic DISK0" + i, BusType = "USB", PartitionStyle = "GPT", HealthStatus = "Healthy", OperationalStatus = "Online", Size = 4000000000000L };

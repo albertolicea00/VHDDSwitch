@@ -23,7 +23,7 @@ namespace VHDDSwitch.Core
             using (var process = Process.Start(start))
             {
                 Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
-                if (!process.WaitForExit(45000)) { process.Kill(); process.WaitForExit(); throw new TimeoutException("Almacenamiento: tiempo agotado; compruebe el estado antes de reintentar."); }
+                if (!process.WaitForExit(45000)) { process.Kill(); process.WaitForExit(); throw new TimeoutException("Storage operation timed out; verify disk state before retrying."); }
                 if (process.ExitCode != 0) throw new IOException(stderr.Result.Trim());
                 return stdout.Result.Trim();
             }
@@ -36,43 +36,43 @@ namespace VHDDSwitch.Core
         }
         public static void ValidateTarget(StorageDisk disk)
         {
-            if (disk.Protected) throw new InvalidOperationException("Disco del sistema/arranque protegido.");
+            if (disk.Protected) throw new InvalidOperationException("System or boot disk is protected.");
             if (disk.BusType != "USB" && disk.BusType != "1394" && disk.BusType != "SD" && disk.BusType != "MMC")
-                throw new InvalidOperationException("Se rechaza un disco sin bus externo reconocido: " + disk.BusType);
-            if (String.IsNullOrWhiteSpace(disk.UniqueId)) throw new InvalidOperationException("Disco sin identidad estable; operacion rechazada.");
+                throw new InvalidOperationException("Unsupported external bus: " + disk.BusType);
+            if (String.IsNullOrWhiteSpace(disk.UniqueId)) throw new InvalidOperationException("Disk has no stable identity; operation rejected.");
         }
         public void Change(StorageDisk selected, bool online, Action<string> log)
         {
             // Never trust the disk number retained by the UI after USB re-enumeration.
             var matches = Discover().Where(d => d.UniqueId == selected.UniqueId && d.SerialNumber == selected.SerialNumber).ToList();
-            if (matches.Count != 1) throw new IOException("Identidad ausente o ambigua; actualice la lista.");
+            if (matches.Count != 1) throw new IOException("Missing or ambiguous disk identity; refresh the list.");
             var disk = matches[0]; ValidateTarget(disk);
-            if (disk.IsOffline == !online) { log("Disco " + disk.Number + ": ya tiene el estado solicitado."); return; }
+            if (disk.IsOffline == !online) { log("Disk " + disk.Number + ": already in the requested state."); return; }
             var handles = new List<SafeFileHandle>();
             try
             {
                 // Lock ALL volumes before dismounting any. A busy/unknown volume aborts.
                 if (!online)
                 {
-                    if (disk.Volumes.Count == 0 && disk.PartitionStyle != "RAW") throw new IOException("No se pudieron verificar los volumenes del disco.");
+                    if (disk.Volumes.Count == 0 && disk.PartitionStyle != "RAW") throw new IOException("Unable to verify disk volumes.");
                     foreach (var volume in disk.Volumes)
                     {
-                        if (String.IsNullOrEmpty(volume.Path) || !volume.Path.StartsWith(@"\\?\Volume{")) throw new IOException("Volumen sin ruta GUID verificable.");
+                        if (String.IsNullOrEmpty(volume.Path) || !volume.Path.StartsWith(@"\\?\Volume{")) throw new IOException("Volume has no verifiable GUID path.");
                         var h = Native.CreateFile(volume.Path.TrimEnd('\\'), 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
                         handles.Add(h);
-                        if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "No se pudo abrir " + volume.Path);
-                        Native.Control(h, 0x90018, "Volumen ocupado: cierre las aplicaciones y reintente. " + volume.DriveLetter);
-                        if (!Native.FlushFileBuffers(h)) throw new Win32Exception(Marshal.GetLastWin32Error(), "No se pudo vaciar la cache.");
+                        if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to open " + volume.Path);
+                        Native.Control(h, 0x90018, "Volume is busy; close applications and retry. " + volume.DriveLetter);
+                        if (!Native.FlushFileBuffers(h)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to flush the cache.");
                     }
-                    foreach (var h in handles) Native.Control(h, 0x90020, "No se pudo desmontar el volumen.");
+                    foreach (var h in handles) Native.Control(h, 0x90020, "Unable to dismount the volume.");
                 }
                 // Revalidate identity AND system flags inside the mutation process.
                 string uid = Convert.ToBase64String(Encoding.UTF8.GetBytes(disk.UniqueId));
-                string script = "$ErrorActionPreference='Stop'; $uid=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + uid + "')); $d=@(Get-Disk | Where-Object UniqueId -eq $uid); if($d.Count -ne 1 -or $d[0].Number -ne " + disk.Number + "){throw 'La topologia cambio'}; $d=$d[0]; $p=@($d|Get-Partition); if($d.IsBoot -or $d.IsSystem -or @($p|Where-Object {$_.IsBoot -or $_.IsSystem -or $_.DriveLetter -eq 'C' -or ($_.DriveLetter -and ($_.DriveLetter.ToString()+':') -eq $env:SystemDrive)}).Count -gt 0){throw 'Disco protegido'}; ";
+                string script = "$ErrorActionPreference='Stop'; $uid=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + uid + "')); $d=@(Get-Disk | Where-Object UniqueId -eq $uid); if($d.Count -ne 1 -or $d[0].Number -ne " + disk.Number + "){throw 'Disk topology changed'}; $d=$d[0]; $p=@($d|Get-Partition); if($d.IsBoot -or $d.IsSystem -or @($p|Where-Object {$_.IsBoot -or $_.IsSystem -or $_.DriveLetter -eq 'C' -or ($_.DriveLetter -and ($_.DriveLetter.ToString()+':') -eq $env:SystemDrive)}).Count -gt 0){throw 'Protected disk'}; ";
                 script += online ? "$d | Set-Disk -IsOffline $false; $d | Set-Disk -IsReadOnly $false; Update-HostStorageCache;" : "$d | Set-Disk -IsOffline $true;";
-                script += " if((Get-Disk -Number " + disk.Number + ").IsOffline -ne $" + (!online ? "true" : "false") + "){throw 'Estado final no confirmado'}";
+                script += " if((Get-Disk -Number " + disk.Number + ").IsOffline -ne $" + (!online ? "true" : "false") + "){throw 'Final state not confirmed'}";
                 RunPowerShell(script);
-                log("Disco " + disk.Number + (online ? ": ONLINE confirmado." : ": cache vaciada, volumenes desmontados, OFFLINE confirmado. No implica apagado fisico."));
+                log("Disk " + disk.Number + (online ? ": ONLINE confirmed." : ": cache flushed, volumes dismounted, OFFLINE confirmed. This does not imply hardware power-off."));
             }
             finally { foreach (var h in handles) h.Dispose(); }
         }

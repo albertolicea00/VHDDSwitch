@@ -13,7 +13,7 @@ out/
 *.iso
 
 # Exception: Keep release executables if explicitly placed in release distribution folder
-!dist/*.exe
+
 
 # Visual Studio / Visual Studio Code
 .vs/
@@ -43,3 +43,7 @@ $RECYCLE.BIN/
 temp/
 logs/
 .workspace/*
+
+# Generated screenshots and previews
+docs/preview*.png
+screenshots/
